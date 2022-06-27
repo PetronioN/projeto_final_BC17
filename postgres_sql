@@ -1,0 +1,171 @@
+-- Tabela consumo_energia_por_setor
+-- a coluna id foi um adicional para as pesquisas
+-- se tornarem mais fáceis e diretas;
+CREATE TABLE IF NOT EXISTS consumo_energia_por_setor (
+	id SERIAL,
+    Data VARCHAR(50),
+	TipoConsumidor VARCHAR(50),
+	Sistema VARCHAR(50),
+	UF VARCHAR(50),
+	SetorN1 VARCHAR(50),
+	SetorN2 VARCHAR(50),
+	TensaoN1 VARCHAR(50),
+	TensaoN2 VARCHAR(50),
+	TensaoN3 VARCHAR(50),
+	FaixaDeConsumoN1 VARCHAR(50),
+	FaixaDeConsumoN2 VARCHAR(50),
+	Consumo VARCHAR(50),
+	Consumidores VARCHAR(50),
+	ultima_data TIMESTAMP,
+	ultimo_usuario VARCHAR(50),
+    
+    CONSTRAINT consumo_energia_pk PRIMARY KEY (id)
+);
+-- -- -- -- -- -  SELECT - -- -- -- -- --
+SELECT * FROM consumo_energia_por_setor;
+-- -- -- -- -- -- -- -- -- -- -- -- -- --
+DROP TABLE consumo_energia_por_setor;
+
+-- Tabela geracao_por_fonte
+-- id_geracao_fonte adicionado como varchar para
+-- evitar algum erro quanto a algum valor que precisasse
+-- de tratamento;
+CREATE TABLE IF NOT EXISTS geracao_por_fonte (
+	id_geracao_fonte VARCHAR(40),
+    nome_fonte_geracao VARCHAR(80),
+    media_energia_despachada_gigawatt_hora VARCHAR(40),
+    mes_referencia VARCHAR(40),
+    ano_referencia VARCHAR(40),
+    data_processamento VARCHAR(40),
+	ultima_data TIMESTAMP,
+	ultimo_usuario VARCHAR(50),
+    
+    CONSTRAINT geracao_fonte_pk PRIMARY KEY (id_geracao_fonte)
+);
+-- -- -- -- -- -  SELECT - -- -- -- -- --
+SELECT * FROM geracao_por_fonte;
+-- -- -- -- -- -- -- -- -- -- -- -- -- --
+DROP TABLE geracao_por_fonte;
+
+CREATE TABLE IF NOT EXISTS log (
+	id serial,
+	data_processo TIMESTAMP,
+	usuario_processo VARCHAR(30),
+	descricao TEXT,
+	
+	CONSTRAINT id_log PRIMARY KEY (id)
+);
+
+-- Trigger da coluna geracao_por_fonte.
+-- O seguinte trigger foi criado para
+-- fortalecer a segurança relacionada a
+-- inserção e alteração de valores
+CREATE OR REPLACE FUNCTION id_geracao_fonte()
+	RETURNS TRIGGER AS $id_geracao_fonte$
+		BEGIN
+			IF (TG_OP = 'INSERT') THEN
+				INSERT INTO log (data_processo, usuario_processo, descricao) 
+					VALUES (now(), CURRENT_USER, 'Novo valor adicionado na tabela geracao_por_fonte. '
+							|| 'ID: ' || new.id_geracao_fonte
+							|| ' Nome da fonte: ' || new.nome_fonte_geracao);
+			END IF;
+			IF (TG_OP = 'UPDATE') THEN
+				INSERT INTO log (data_processo, usuario_processo, descricao)
+					VALUES (now(), CURRENT_USER, 'Valor alterado. 
+												 Verifique as colunas mês e ano! '
+						   	|| 'ID: ' || old.id_geracao_fonte 
+							||' Nome da fonte: ' || old.nome_fonte_geracao);
+			END IF;
+			IF (new.id_geracao_fonte IS NULL) THEN
+				RAISE EXCEPTION 'O id da fonte de geração não pode ser nulo!';
+			ELSIF (new.nome_fonte_geracao IS NULL) THEN
+				RAISE EXCEPTION 'O nome da fonte de geração não pode ser nulo!';
+			ELSIF (new.media_energia_despachada_gigawatt_hora IS NULL) THEN
+				RAISE EXCEPTION 'A média de energia despachada não pode ser nula!';
+			ELSIF (new.id_geracao_fonte <> old.id_geracao_fonte) THEN
+				RAISE EXCEPTION 'O id da fonte de geração não pode ser alterado!';
+			ELSIF (new.mes_referencia <> old.mes_referencia) THEN
+				RAISE EXCEPTION 'O mês de referência não pode ser alterado!';
+			ELSIF (new.ano_referencia <> old.ano_referencia) THEN
+				RAISE EXCEPTION 'O ano de referência não pode ser alterado!';
+			ELSIF (new.data_processamento <> old.data_processamento) THEN
+				RAISE EXCEPTION 'A data de processamento não pode ser alterada!';
+			END IF;
+			new.ultima_data := 'now';
+			new.ultimo_usuario := current_user;
+			RETURN NEW;
+		END;
+$id_geracao_fonte$ LANGUAGE plpgsql;
+
+CREATE TRIGGER id_geracao_fonte AFTER INSERT OR UPDATE ON geracao_por_fonte
+FOR EACH ROW EXECUTE PROCEDURE id_geracao_fonte();
+
+-- Trigger da coluna consumo_energia_por_setor
+-- O seguinte trigger foi criado para estabelecer
+-- segurança relacionada a tabela, além de registrar
+-- cada usuário e data que foram feitas as inserções
+-- e/ou alterações.
+CREATE OR REPLACE FUNCTION consumo_energia_setor ()
+	RETURNS TRIGGER AS $consumo_energia_setor$
+		BEGIN
+			IF (TG_OP = 'INSERT') THEN
+				INSERT INTO log (data_processo, usuario_processo, descricao)
+				VALUES (now(), CURRENT_USER, 
+						'Valor adicionado na tabela consumo_energia_setor. ' 
+						|| 'ID: ' || new.id);
+			END IF;
+			IF (TG_OP = 'UPDATE') THEN
+				INSERT INTO log (data_processo, usuario_processo, descricao)
+				VALUES (now(), CURRENT_USER, 'Valor alterado na tabela consumo_energia_setor. '
+					   || 'ID: ' || new.id);
+			END IF;
+			IF (new.id <> old.id) THEN
+				RAISE EXCEPTION 'O id não pode ser alterado!';
+			ELSIF (new.ultima_data <> old.ultima_data) THEN
+				RAISE EXCEPTION 'Você não pode alterar este campo!';
+			ELSIF (new.ultimo_usuario <> old.ultimo_usuario) THEN
+				RAISE EXCEPTION 'Você não pode alterar este campo!';
+			ELSIF (new.sistema <> old.sistema) THEN
+				RAISE EXCEPTION 'Você não pode alterar o sistema!';
+			ELSIF (new.UF <> old.UF) THEN
+				RAISE EXCEPTION 'Você não pode alterar o UF!';
+			ELSIF (new.Data <> old.Data) THEN
+				RAISE EXCEPTION 'Você não pode alterar a Data!';
+			END IF;
+			new.ultima_data := 'now';
+			new.ultimo_usuario := CURRENT_USER; 
+			RETURN NEW;
+		END;
+$consumo_energia_setor$ LANGUAGE plpgsql;
+
+CREATE TRIGGER consumo_energia_setor AFTER INSERT OR UPDATE ON consumo_energia_por_setor
+FOR EACH ROW EXECUTE PROCEDURE consumo_energia_setor();
+
+-- Trigger relacionado a tabela log.
+-- O seguinte trigger foi criado para
+-- estabelecer segurança na tabela de log,
+-- que vai conter informações importantes
+-- que não devem ser atualizadas ou deletadas.
+CREATE OR REPLACE FUNCTION log_function()
+	RETURNS TRIGGER AS $log_function$
+		BEGIN
+			IF (TG_OP = 'UPDATE') THEN
+				RAISE EXCEPTION 'Você não pode alterar valores no log!';
+			END IF;
+			IF (TG_OP = 'DELETE') THEN
+				RAISE EXCEPTION 'Você não pode deletar valores no log!';
+			END IF;
+			IF (new.data_processo IS NULL) THEN
+				RAISE EXCEPTION 'A data do processo não pode ser nula!';
+			ELSIF (new.usuario_processo IS NULL) THEN
+				RAISE EXCEPTION 'O usuário do processo deve ser identificado!';
+			END IF;
+			new.ultima_data := 'now';
+			new.ultimo_usuario := current_user;
+			RETURN NEW;
+		END;
+$log_function$ LANGUAGE plpgsql;
+
+CREATE TRIGGER log_function BEFORE UPDATE OR DELETE ON log
+FOR EACH ROW EXECUTE PROCEDURE log_function();
+
